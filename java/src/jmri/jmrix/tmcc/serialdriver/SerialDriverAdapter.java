@@ -96,8 +96,8 @@ public class SerialDriverAdapter extends SerialPortController {
     }
 
     protected String[] validSpeeds = new String[]{Bundle.getMessage("Baud9600"),
-            Bundle.getMessage("Baud19200"), Bundle.getMessage("Baud57600")};
-    protected int[] validSpeedValues = new int[]{9600, 19200, 57600};
+            Bundle.getMessage("Baud19200"), Bundle.getMessage("Baud57600"), Bundle.getMessage("Baud115200")};
+    protected int[] validSpeedValues = new int[]{9600, 19200, 57600, 115200}; // 115200 Baud is used for Lionel Base3's USB port.
 
     @Override
     public int defaultBaudIndex() {

@@ -56,15 +56,55 @@ public class SerialThrottle extends AbstractThrottle {
         if (func>=0 && func < SERIAL_FUNCTION_CODES.length) {
             if ( SERIAL_FUNCTION_CODES[func] > 0xFFFF ) {
                 // TMCC 2 format
-                sendToLayout(SERIAL_FUNCTION_CODES[func] + address.getNumber() * 512, func);
+                if (SERIAL_FUNCTION_CODES[func] > 0xFFFFFF ) {
+                    int first =  (int)(SERIAL_FUNCTION_CODES[func] >> 24);
+                    int second = (int)(SERIAL_FUNCTION_CODES[func] & 0xFFFFFF);
+                    // doubles are only sent once, not repeating
+                    sendOneWordOnce(first  + address.getNumber() * 512);
+                    sendOneWordOnce(second + address.getNumber() * 512);     
+                    if((first & 0xFFFF) >= 0x170 && (first & 0xFFFF) <= 0x17F) // if the lower 9 bits are within 0x170 and 0x17F, this is a Multi-Word command.
+                    {
+                        sendOneWordOnce(createMultiWordChecksum(first,second));
+                    }
+                           
+                } 
+                else {
+                    // single message
+                    sendFnToLayout((int)SERIAL_FUNCTION_CODES[func] + address.getNumber() * 512, func);
+                }
             } else {
                 // TMCC 1 format
-                sendToLayout(SERIAL_FUNCTION_CODES[func] + address.getNumber() * 128, func);
+                sendFnToLayout((int)SERIAL_FUNCTION_CODES[func] + address.getNumber() * 128, func);
             }
         }
         else {
             super.setFunction(func, value);
         }
+    }
+    
+    // Generate  the checksum for the previous two word's data parameters.
+    private int createMultiWordChecksum(int word1, int word2) {
+        
+        word1 = word1  + address.getNumber() * 512;
+        word2 = word2 + address.getNumber() * 512;
+        
+        // Multi word needs to calculate a checksum. 
+        int byte1 = word1 & 0xFF;
+        int byte2 = (word1 & 0xFF00) >> 8;
+        int byte3 = word2 & 0xFF;
+        int byte4 = (word2 & 0xFF00) >> 8;
+        int byte5 = byte4; // a bit redundant
+        
+        int checksum = ~((byte1 + byte2 + byte3 + byte4 + byte5) % 256) ;
+        return (0xFB0000 | (word2 & 0xFF00)) |  (checksum & 0xFF); // Make sure checksum is truncated by 0xFF
+        
+    }
+
+    // the argument is a long containing 3 bytes. 
+    // The first byte is the message opcode
+    private void sendOneWordOnce(int word) {
+        SerialMessage m = new SerialMessage(word);
+        tc.sendSerialMessage(m, null);
     }
 
     // Translate function number to line characters.
@@ -72,7 +112,10 @@ public class SerialThrottle extends AbstractThrottle {
     //    and the address will be set in the low position.
     // If the upper byte is non-zero, that value will be sent,
     //    and the address will be set in the upper (TMCC2) position.
-    private final static int[] SERIAL_FUNCTION_CODES = new int[] {
+    //    If six bytes are specified (with the upper one non-zero), 
+    //    this will be interpreted as two commands to be sequentially sent,
+    //    with the upper bytes sent first.
+    private final static long[] SERIAL_FUNCTION_CODES = new long[] {
         0x00000D, 0x00001D, 0x00001C, 0x000005, 0x000006, /* Fn0-4 */
         0x000010, 0x000011, 0x000012, 0x000013, 0x000014, /* Fn5-9 */
         0x000015, 0x000016, 0x000017, 0x000018, 0x000019, /* Fn10-14 */
@@ -80,26 +123,26 @@ public class SerialThrottle extends AbstractThrottle {
         0x000004, 0x000007, 0x000047, 0x000042, 0x000028, /* Fn20-24 */
         0x000029, 0x00002A, 0x00002B, /* 25-27 */
         // start of TMCC 2 functions
-        0xF801FB, // Fn28 Start Up Sequence 1 (Delayed Prime Mover)
+        0xF801FBF801FCL, // Fn28 Start Up Sequence 1 (Delayed Prime Mover, then Immediate Start Up)
         0xF801FC, // Fn29 Start Up Sequence 2 (Immediate Start Up)
-        0xF801FD, // Fn30 Shut Down Sequence 1 (Delay w/ Announcement)
+        0xF801FDF801FEL, // Fn30 Shut Down Sequence 1 (Delay w/ Announcement then Immediate Shut Down)
         0xF801FE, // Fn31 Shut down Sequence 2 (Immediate Shut Down)
-        0xF90000, // Fn32
-        0xF90000, // Fn33
-        0xF90000, // Fn34
-        0xF90000, // Fn35
-        0xF90000, // Fn36
-        0xF90000, // Fn37
-        0xF90000, // Fn38
-        0xF90000, // Fn39
-        0xF90000, // Fn40
-        0xF90000, // Fn41
-        0xF90000, // Fn42
-        0xF90000, // Fn43
-        0xF90000, // Fn44
-        0xF90000, // Fn45
-        0xF90000, // Fn46
-        0xF90000, // Fn47
+        0xF8013B, // Fn32 Aux 3
+        0xF8012D, // Fn33 Locomotive Re-Fueling Sound
+        0xF801F8, // Fn34 RS Trigger Brake Air-Release
+        0xF801F9, // Fn35 RS Trigger, Short Let-Off
+        0xF801FA, // Fn36 RS Trigger, Long Let-Off
+        0xF801F1, // Fn37 One Shot Bell 1
+        0xF801F2, // Fn38 One Shot Bell 2
+        0xF801F3, // Fn39 One Shot Bell 3
+        0xF801E1, // Fn40 Quilling Whistle Level 1
+        0xF801E4, // Fn41 Quilling Whistle Level 2
+        0xF801E8, // Fn42 Quilling Whistle Level 3
+        0xF801EF, // Fn43 Quilling Whistle Level 4
+        0xF8017CFB0010L, // Fn44 Front Pantograph Raised
+        0xF8017CFB0011L, // Fn45 Front Pantograph Lowered
+        0xF8017CFB0012L, // Fn46 Rear Pantograph Raised 
+        0xF8017CFB0013L, // Fn47 Rear Pantograph Lowered
         0xF90000, // Fn48
         0xF90000, // Fn49
         0xF90000, // Fn50
@@ -214,7 +257,7 @@ public class SerialThrottle extends AbstractThrottle {
      * @param value Content of message to be sent in three bytes
      * @param func  The number of the function being addressed
      */
-    protected void sendToLayout(int value, int func) {
+    protected void sendFnToLayout(int value, int func) {
         tc.sendSerialMessage(new SerialMessage(value), null);
         tc.sendSerialMessage(new SerialMessage(value), null);
         tc.sendSerialMessage(new SerialMessage(value), null);
